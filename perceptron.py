@@ -1,8 +1,20 @@
 import numpy as np
+import pandas as pd
+
 
 class Perceptron:
-    def __init__(self, data, classification_mode=False, activation_function_type="sigmoid", count_of_layers=3,
-                 epochs=10000):
+    def __init__(self, data: pd.DataFrame, classification_mode: bool = False, activation_function_type: str ="sigmoid",
+                 count_of_layers: int =3,
+                 epochs: int =10000):
+
+        """
+        :param data: input data for fit model
+        :param classification_mode: Flag to activate classification mode
+        :param activation_function_type: Type of activation function to neuron
+        :param count_of_layers: Count of hidden layers
+        :param epochs: Count of fit's epochs
+        """
+
         self.data = data
         self.step = 0.001
         self.input_data = np.resize(self.data.iloc[:, 1:].to_numpy(), (self.data.shape[0], 28 * 28))
@@ -14,51 +26,55 @@ class Perceptron:
         self.activation_func = None
         self.count_of_layers = count_of_layers
         self.epochs = epochs
-        self.activation_functions = {"sigmoid": self.sigmoid}
+        self.activation_functions = {"sigmoid": self._sigmoid}
         if classification_mode:
-            self.reorganized_y_to_classification()
+            self._reorganized_y_to_classification()
 
-        self.set_activation_function(activation_function_type)
+        self._set_activation_function(activation_function_type)
 
-        self.set_layers(count_of_layers)
+        self._set_layers()
 
-    def set_activation_function(self, activation_function):
-        self.activation_func = self.activation_functions.get(activation_function, self.sigmoid)
+        self._set_random_weights()
 
-    def set_layers(self):
-        self.layers = np.empty([self.count_of_layers])
+    def _set_activation_function(self, activation_function):
+        self.activation_func = self.activation_functions.get(activation_function, self._sigmoid)
+
+    def _set_layers(self):
+        self.layers = [0 for i in range(self.count_of_layers)]
         self.layers[0] = self.input_data
 
-    def set_random_weights(self):
-        self.weights = np.array()
+    def _set_random_weights(self):
+        self.weights = [0 for i in range(self.count_of_layers - 1)]
         for i in range(self.count_of_layers - 1):
-            cur_demension = self.layers[i].shape[1]
-            if i < self.count_of_layers - 1:
+            if not i:
+                cur_demension = self.layers[i].shape[1]
+            else: cur_demension = next_demesion
+            if i < self.count_of_layers - 2:
                 next_demesion = cur_demension // 2
             else:
                 next_demesion = self.output_data.shape[1]
-            np.append(self.weights, 2 * np.random.random((cur_demension, next_demesion)) - 1, axis=0)
+            self.weights[i] = 2 * np.random.random((cur_demension, next_demesion)) - 1
 
-    def reorganized_y_to_classification(self):
-        unique_values = np.unique(self.y)
+    def _reorganized_y_to_classification(self):
+        unique_values = np.unique(self.output_data)
         count_of_bits = int(np.ceil(np.sqrt(len(unique_values))))
         change_dict = dict(map(lambda x: [x, str(bin(x))[2:].rjust(count_of_bits, "0")], unique_values))
         new_output_data = []
-        for i in self.y:
+        for i in self.output_data:
             new_output_data.append(list(map(int, change_dict.get(i[0]))))
         self.output_data = np.array(new_output_data)
         self.output_layer_size = count_of_bits
         self.recognized_dict = dict(map(lambda x: [change_dict.get(x), x], change_dict.keys()))
 
-    def learning(self):
-        layer_delta = np.array()
+    def fit(self):
+        layer_delta = np.array([], float)
 
         for i in range(self.epochs):
             for j in range(1, self.count_of_layers):
                 self.layers[j] = self.activation_func(np.dot(self.layers[j - 1], self.weights[j - 1]))
 
-            layer_delta[self.count_of_layers] = (self.layers[self.count_of_layers] - self.output_data) \
-                                                * self.activation_func(self.layers[self.count_of_layers], True)
+            layer_delta[self.count_of_layers - 1] = (self.layers[self.count_of_layers - 1] - self.output_data) \
+                                                * self.activation_func(self.layers[self.count_of_layers - 1], True)
             for j in range(self.count_of_layers - 1, 1, -1):
                 layer_delta[j] = layer_delta[j + 1].dot(self.weights[j + 1].T) * self.activation_func(self.layers[j],
                                                                                                       True)
@@ -75,8 +91,8 @@ class Perceptron:
         return self.layers[self.count_of_layers]
 
     # функции активации
-    def sigmoid(self, x, derivative=False):
+    def _sigmoid(self, x, derivative=False):
         if derivative:
-            return self.sigmoid(x) * (1 - self.sigmoid(x))
+            return self._sigmoid(x) * (1 - self._sigmoid(x))
         else:
             return 1 / (1 + np.exp(-x))
