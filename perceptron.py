@@ -26,7 +26,7 @@ class Perceptron:
         self.activation_func = None
         self.count_of_hidden_layers = count_of_hidden_layers
         self.epochs = epochs
-        self.activation_functions = {"sigmoid": self._sigmoid}
+        self.activation_functions = {"sigmoid": self._sigmoid, "linel": self._linel}
         self.classification_mode = classification_mode
         if self.classification_mode:
             self._reorganized_y_to_classification()
