@@ -1,21 +1,17 @@
-from .base import BaseEstimator
-from abc import ABCMeta, abstractmethod, abstractproperty
+from .base import BaseEstimator, BaseRegression
+from abc import ABCMeta, abstractmethod
 import loss as loss_functions
 import numpy as np
+from pandas import DataFrame, Series
 
 
 class LinearEstimator(BaseEstimator, metaclass=ABCMeta):
-    @abstractmethod
-    def fit(self, X, y):
-        pass
-
-    @abstractmethod
-    def predict(self, X):
-        pass
+    def _add_extra_parameter(self, X):
+        return np.append(np.ones([np.shape(X)[0], 1]), X, axis=1)
 
     def _validate_data(self, X=None, y=None):
-        no_X = isinstance(X, [str, None])
-        no_y = isinstance(y, [str, None])
+        no_X = isinstance(X, str) and X is None
+        no_y = isinstance(y, str) and y is None
         if no_X and no_y:
             raise ValueError('Inappropriate values in the data set')
         elif not no_X and no_y:
@@ -23,35 +19,34 @@ class LinearEstimator(BaseEstimator, metaclass=ABCMeta):
         elif no_X and not no_y:
             raise ValueError('Inappropriate values in the sample of objects')
 
-    def _optima_desicion(self, X, y):
-        return np.linalg.inv(X.T.dot(X)).dot(X.T).dot(y)
-
-    def _gradient_descent(self, X, y):
-        w = np.random.random(np.shape(X)[1])
-        for e in range(self.epoch):
-            grad = self.loss(y, X, w, True)
-            w -= self.alpha * grad
-        return w
-
-    def _stohastic_gradient_descent(self, X, y):
-        if isinstance(self.batch_len, int):
-            raise Exception('Batch length is not integer')
-        w = np.random.random(np.shape(X)[1])
-        for e in range(self.epoch):
-            for b in range(self.batch_len, np.shape(y)[0], self.batch_len):
-                X_batch = X[b - self.batch_len:b, :]
-                y_batch = y[b - self.batch_len:b]
-                grad = self.loss(y_batch, X_batch, w, True)
-                w -= self.alpha * grad
-        return w
-
-    def _add_extra_parameter(self, X):
-        return np.append(np.ones(np.shape(X)[0]), X, axis=1)
+    def _prepare_data(self, X, y):
+        if isinstance(X, DataFrame) or isinstance(X, Series):
+            X = X.to_numpy()
+        if isinstance(y, DataFrame) or isinstance(y, Series):
+            y = y.to_numpy()
+        # if len(y.shape) > 1:
+        #     y = y.reshape(y.size)
+        return X, y
 
 
-class LinearRegression(LinearEstimator):
-    def __init__(self, loss='MSE', decision_algorithm_type='optima', reg_lambda=0.01, alpha=0.01, epoch=1000,
-                 batch_len=None):
+class LinearRegression(LinearEstimator, BaseRegression):
+    def fit(self, X, y):
+        self._validate_data(X, y)
+        X, y = self._prepare_data(X, y)
+        X = self._add_extra_parameter(X)
+        self.w = np.linalg.inv(X.T.dot(X)).dot(X.T).dot(y)
+        return self
+
+    def _decision(self, X):
+        if self.w is None:
+            raise Exception('Weights vector not initialized. Fit estimator before do prediction.')
+        else:
+            X = self._add_extra_parameter(X)
+            return X.dot(self.w)
+
+# TODO: исправить градиентый спуск, ибо уходит в бесконечность
+class DGLinearRegression(LinearRegression):
+    def __init__(self, loss='MSE', reg_lambda=0.01, alpha=0.1, epoch=1):
         self.losses = {
             'MSE': loss_functions.mean_square_error,
             'MAE': loss_functions.mean_absolute_error,
@@ -59,20 +54,46 @@ class LinearRegression(LinearEstimator):
             'L2': loss_functions.l2_norm
         }
 
-        self.decision_algorithms = {
-            'optima': self._optima_desicion,
-            'GD': self._gradient_descent,
-            'SGD': self._stohastic_gradient_descent
-        }
         if loss in self.losses.keys():
             self.loss = self.losses.get(loss)
         else:
             raise Exception('Undefined loss type')
 
-        if decision_algorithm_type in self.decision_algorithms.keys():
-            self.decision_algorithm = self.decision_algorithms.get(decision_algorithm_type)
+        self.reg_lambda = reg_lambda
+        self.alpha = alpha
+        self.epoch = epoch
+        self.w = None
+
+    def fit(self, X, y):
+        self._validate_data(X, y)
+        X, y = self._prepare_data(X, y)
+        X = self._add_extra_parameter(X)
+
+        self.w = np.random.random([np.shape(X)[1], 1])
+        print(X.dot(self.w) - y)
+        for e in range(self.epoch):
+            grad = self.loss(y, X, self.w, True)
+            if np.inf in grad:
+                break
+            self.w -= self.alpha * grad
+            print(self.w)
+
+        return self
+
+
+class SDGLinearRegression(LinearRegression):
+    def __init__(self, loss='MSE', reg_lambda=0.01, alpha=0.01, epoch=1000, batch_len=None):
+        self.losses = {
+            'MSE': loss_functions.mean_square_error,
+            'MAE': loss_functions.mean_absolute_error,
+            'L1': loss_functions.l1_norm,
+            'L2': loss_functions.l2_norm
+        }
+
+        if loss in self.losses.keys():
+            self.loss = self.losses.get(loss)
         else:
-            raise Exception('Undefined decision algorithms type')
+            raise Exception('Undefined loss type')
 
         self.reg_lambda = reg_lambda
         self.alpha = alpha
@@ -83,10 +104,20 @@ class LinearRegression(LinearEstimator):
     def fit(self, X, y):
         self._validate_data(X, y)
         X = self._add_extra_parameter(X)
-        self.w = self.decision_algorithm(X, y)
 
-    def predict(self, X):
-        if self.w is None:
-            raise Exception('Weights vector not initialized. Fit estimator before prediction.')
-        else:
-            return X.dot(self.w)
+        X = X.to_numpy()
+        y = y.to_numpy()
+
+        if isinstance(self.batch_len, int):
+            raise Exception('Batch length is not integer')
+        elif self.batch_len > X.shape[0]:
+            raise Exception('Batch length more X length')
+
+        self.w = np.random.random(np.shape(X)[1])
+        for e in range(self.epoch):
+            for b in range(self.batch_len, np.shape(y)[0], self.batch_len):
+                X_batch = X[b - self.batch_len:b, :]
+                y_batch = y[b - self.batch_len:b]
+                grad = self.loss(y_batch, X_batch, self.w, True)
+                self.w -= self.alpha * grad
+        return self

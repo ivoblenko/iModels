@@ -3,7 +3,9 @@ import numpy as np
 
 def mean_square_error(y, X, w, gradient=False):
     if gradient:
-        return 2 * X.T.dot(X.dot(w) - y)
+        f = X.dot(w)
+        err = f - y
+        return 2 * X.T.dot(err)
     else:
         return np.power(X.dot(w) - y, 2)
 
@@ -21,6 +23,7 @@ def mean_absolute_percentage_error(y, X, w, gradient=False):
         pass
     else:
         return (np.abs((X.dot(w) - y) / y)) / np.shape(y)[0]
+
 
 # TODO: проверить качестов регуляризаций
 def l1_norm(y, X, w, l, gradient=False, loss=mean_square_error):
